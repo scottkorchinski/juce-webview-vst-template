@@ -8,6 +8,8 @@
   "configurePresets": [
     {
       "name": "default",
+      "displayName": "Default Debug",
+      "description": "Debug Ninja build for local plugin development.",
       "generator": "Ninja",
       "binaryDir": "build",
       "cacheVariables": {
@@ -17,6 +19,8 @@
     },
     {
       "name": "release",
+      "displayName": "Release",
+      "description": "Release Ninja build for embedded UI packaging.",
       "generator": "Ninja",
       "binaryDir": "release-build",
       "cacheVariables": {
@@ -25,6 +29,8 @@
     },
     {
       "name": "Xcode",
+      "displayName": "Xcode",
+      "description": "Generate an Xcode project for IDE-based debugging.",
       "generator": "Xcode",
       "binaryDir": "xcode-build"
     }
