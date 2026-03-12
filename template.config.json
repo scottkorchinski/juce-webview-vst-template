@@ -1,0 +1,13 @@
+{
+  "projectName": "JuceWebViewVstTemplate",
+  "productName": "WebView Plugin Starter",
+  "companyName": "Your Company",
+  "bundleId": "com.yourcompany.webview-plugin-starter",
+  "pluginCode": "WvSt",
+  "manufacturerCode": "Your",
+  "isSynth": false,
+  "formats": ["AU", "VST3", "Standalone"],
+  "editorWidth": 360,
+  "editorHeight": 640,
+  "devServerUrl": "http://127.0.0.1:5173"
+}

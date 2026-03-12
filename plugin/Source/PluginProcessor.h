@@ -4,12 +4,12 @@
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
 
-namespace excite {
+namespace template_plugin {
 
-class LifelineProcessor : public juce::AudioProcessor {
+class TemplatePluginProcessor : public juce::AudioProcessor {
 public:
-  LifelineProcessor();
-  ~LifelineProcessor() override;
+  TemplatePluginProcessor();
+  ~TemplatePluginProcessor() override;
 
   void prepareToPlay(double sampleRate, int samplesPerBlock) override;
   void releaseResources() override;
@@ -42,10 +42,9 @@ public:
 
 private:
   struct Parameters {
-    juce::AudioParameterFloat* gain{nullptr};
+    juce::AudioParameterFloat* drive{nullptr};
     juce::AudioParameterFloat* tone{nullptr};
     juce::AudioParameterFloat* mix{nullptr};
-    juce::AudioParameterFloat* outputGain{nullptr};
     juce::AudioParameterBool* bypass{nullptr};
   };
   static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout(Parameters&);
@@ -56,16 +55,14 @@ private:
   void ensureStateForChannels(int numChannels);
 
   double currentSampleRate{44100.0};
-  std::vector<float> heldSamples;
-  std::vector<int> holdCounters;
-  std::vector<float> toneLowStates;
+  std::vector<float> lowpassStates;
 
   juce::AbstractFifo analyzerFifo{16384};
   std::vector<float> analyzerStorage{std::vector<float>(16384, 0.0f)};
   std::atomic<float> meterLeft{0.0f};
   std::atomic<float> meterRight{0.0f};
 
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LifelineProcessor)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TemplatePluginProcessor)
 };
 
-} // namespace excite
+} // namespace template_plugin

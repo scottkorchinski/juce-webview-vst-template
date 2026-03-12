@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "TemplatePluginConfig.h"
 #include "WebViewAssets.h"
 #include <algorithm>
 #include <cmath>
@@ -10,7 +11,7 @@
 #error "ZIPPED_FILES_PREFIX must be set by CMake"
 #endif
 
-namespace excite {
+namespace template_plugin {
 namespace {
 
 std::vector<std::byte> streamToVector(juce::InputStream& stream) {
@@ -48,21 +49,14 @@ std::vector<std::byte> getWebViewFileAsBytes(const juce::String& filepath) {
   return {};
 }
 
-constexpr const char* LOCAL_DEV_SERVER = "http://127.0.0.1:5173";
-constexpr int DEFAULT_EDITOR_WIDTH = 320;
-constexpr int DEFAULT_EDITOR_HEIGHT = 720;
-const juce::Identifier meterEventId{"meterData"};
-const juce::Identifier spectrumEventId{"spectrumData"};
-
 } // namespace
 
-LifelineEditor::LifelineEditor(LifelineProcessor& p)
+TemplatePluginEditor::TemplatePluginEditor(TemplatePluginProcessor& p)
   : AudioProcessorEditor(&p),
     processorRef(p),
-    webGainRelay(id::GAIN.getParamID()),
+    webDriveRelay(id::DRIVE.getParamID()),
     webToneRelay(id::TONE.getParamID()),
     webMixRelay(id::MIX.getParamID()),
-    webOutputGainRelay(id::OUTPUT_GAIN.getParamID()),
     webBypassRelay(id::BYPASS.getParamID()),
     webView([] {
       auto opts = juce::WebBrowserComponent::Options{}.withNativeIntegrationEnabled();
@@ -78,32 +72,29 @@ LifelineEditor::LifelineEditor(LifelineProcessor& p)
     }()
       .withResourceProvider(
         [this](const juce::String& url) { return getResource(url); },
-        juce::URL(LOCAL_DEV_SERVER).getOrigin())
+        juce::URL(config::devServerUrl).getOrigin())
       .withInitialisationData("pluginName", JUCE_PRODUCT_NAME)
       .withInitialisationData("pluginVersion", JUCE_PRODUCT_VERSION)
-      .withOptionsFrom(webGainRelay)
+      .withInitialisationData("companyName", JUCE_COMPANY_NAME)
+      .withOptionsFrom(webDriveRelay)
       .withOptionsFrom(webToneRelay)
       .withOptionsFrom(webMixRelay)
-      .withOptionsFrom(webOutputGainRelay)
       .withOptionsFrom(webBypassRelay)),
-    webGainAttachment(
-      *processorRef.getState().getParameter(id::GAIN.getParamID()),
-      webGainRelay, nullptr),
+    webDriveAttachment(
+      *processorRef.getState().getParameter(id::DRIVE.getParamID()),
+      webDriveRelay, nullptr),
     webToneAttachment(
       *processorRef.getState().getParameter(id::TONE.getParamID()),
       webToneRelay, nullptr),
     webMixAttachment(
       *processorRef.getState().getParameter(id::MIX.getParamID()),
       webMixRelay, nullptr),
-    webOutputGainAttachment(
-      *processorRef.getState().getParameter(id::OUTPUT_GAIN.getParamID()),
-      webOutputGainRelay, nullptr),
     webBypassAttachment(
       *processorRef.getState().getParameter(id::BYPASS.getParamID()),
       webBypassRelay, nullptr) {
   addAndMakeVisible(webView);
 #if defined(USE_LOCALHOST_UI) && USE_LOCALHOST_UI
-  webView.goToURL(LOCAL_DEV_SERVER);
+  webView.goToURL(config::devServerUrl);
 #else
   webView.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 #endif
@@ -111,17 +102,17 @@ LifelineEditor::LifelineEditor(LifelineProcessor& p)
   setResizable(true, true);
   setResizeLimits(240, 540, 1200, 2700);
   if (auto* constrainer = getConstrainer())
-    constrainer->setFixedAspectRatio(static_cast<double>(DEFAULT_EDITOR_WIDTH) /
-                                     static_cast<double>(DEFAULT_EDITOR_HEIGHT));
-  setSize(DEFAULT_EDITOR_WIDTH, DEFAULT_EDITOR_HEIGHT);
+    constrainer->setFixedAspectRatio(static_cast<double>(config::editorWidth) /
+                                     static_cast<double>(config::editorHeight));
+  setSize(config::editorWidth, config::editorHeight);
   if (resizableCorner != nullptr)
     resizableCorner->toFront(false);
   startTimerHz(30);
 }
 
-LifelineEditor::~LifelineEditor() { stopTimer(); }
+TemplatePluginEditor::~TemplatePluginEditor() { stopTimer(); }
 
-void LifelineEditor::resized() {
+void TemplatePluginEditor::resized() {
   webView.setBounds(getLocalBounds());
   if (resizableCorner != nullptr) {
     auto cornerBounds = getLocalBounds().removeFromRight(18).removeFromBottom(18);
@@ -130,7 +121,7 @@ void LifelineEditor::resized() {
   }
 }
 
-void LifelineEditor::timerCallback() {
+void TemplatePluginEditor::timerCallback() {
   std::array<float, 512> pulled{};
   for (;;) {
     const int got = processorRef.pullAnalyzerSamples(pulled.data(),
@@ -150,7 +141,7 @@ void LifelineEditor::timerCallback() {
   }
 }
 
-void LifelineEditor::pushNextSampleIntoFifo(float sample) noexcept {
+void TemplatePluginEditor::pushNextSampleIntoFifo(float sample) noexcept {
   if (fifoIndex == fftSize) {
     if (!nextFftBlockReady) {
       std::copy(fifo.begin(), fifo.end(), fftData.begin());
@@ -163,14 +154,14 @@ void LifelineEditor::pushNextSampleIntoFifo(float sample) noexcept {
   fifo[static_cast<size_t>(fifoIndex++)] = sample;
 }
 
-void LifelineEditor::emitMeterEvent() {
+void TemplatePluginEditor::emitMeterEvent() {
   auto* object = new juce::DynamicObject();
   object->setProperty("left", juce::jlimit(0.0f, 1.2f, processorRef.getMeterLeft()));
   object->setProperty("right", juce::jlimit(0.0f, 1.2f, processorRef.getMeterRight()));
-  webView.emitEventIfBrowserIsVisible(meterEventId, juce::var(object));
+  webView.emitEventIfBrowserIsVisible(config::meterEventId, juce::var(object));
 }
 
-void LifelineEditor::emitSpectrumEvent() {
+void TemplatePluginEditor::emitSpectrumEvent() {
   window.multiplyWithWindowingTable(fftData.data(), fftSize);
   forwardFFT.performFrequencyOnlyForwardTransform(fftData.data());
 
@@ -203,10 +194,10 @@ void LifelineEditor::emitSpectrumEvent() {
     points.add(smoothed);
   }
 
-  webView.emitEventIfBrowserIsVisible(spectrumEventId, juce::var(points));
+  webView.emitEventIfBrowserIsVisible(config::spectrumEventId, juce::var(points));
 }
 
-std::optional<juce::WebBrowserComponent::Resource> LifelineEditor::getResource(
+std::optional<juce::WebBrowserComponent::Resource> TemplatePluginEditor::getResource(
     const juce::String& url) const {
   juce::String path;
   if (url.startsWith("/"))
@@ -229,4 +220,4 @@ std::optional<juce::WebBrowserComponent::Resource> LifelineEditor::getResource(
     std::move(bytes), juce::String(getMimeForExtension(ext))};
 }
 
-} // namespace excite
+} // namespace template_plugin

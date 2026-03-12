@@ -23,4 +23,4 @@ web/dist/
 .DS_Store
 
 # Plugin artefacts (optional; remove if you want to track them)
-# plugin/ExciteLifelineModule_artefacts/
+# plugin/<ProjectName>_artefacts/

@@ -1,329 +1,57 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MeterPair } from './components/MeterPair';
+import { ParameterKnob } from './components/ParameterKnob';
+import { SpectrumPanel } from './components/SpectrumPanel';
+import { useJuceSlider } from './hooks/useJuceSlider';
+import { useJuceToggle } from './hooks/useJuceToggle';
 import './App.css';
 
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-const BASE_WIDTH = 320;
-const BASE_HEIGHT = 720;
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const BASE_WIDTH = 360;
+const BASE_HEIGHT = 640;
 
-function polarToCartesian(centerX, centerY, radius, angleInDegrees) {
-  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-  return {
-    x: centerX + radius * Math.cos(angleInRadians),
-    y: centerY + radius * Math.sin(angleInRadians),
-  };
-}
-
-function describeArc(x, y, radius, startAngle, endAngle) {
-  const start = polarToCartesian(x, y, radius, endAngle);
-  const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-  return [
-    'M',
-    start.x,
-    start.y,
-    'A',
-    radius,
-    radius,
-    0,
-    largeArcFlag,
-    0,
-    end.x,
-    end.y,
-  ].join(' ');
-}
-
-function useSliderState(paramId, initialPercent) {
-  const [percent, setPercent] = useState(initialPercent);
-
-  useEffect(() => {
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getSliderState(paramId);
-    if (!state) return;
-
-    setPercent(Math.round(state.getNormalisedValue() * 100));
-    const listener = () => setPercent(Math.round(state.getNormalisedValue() * 100));
-    const listenerId = state.valueChangedEvent.addListener(listener);
-    return () => state.valueChangedEvent.removeListener(listenerId);
-  }, [paramId]);
-
-  const setFromUi = (newPercent) => {
-    const safe = clamp(Math.round(newPercent), 0, 100);
-    setPercent(safe);
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getSliderState(paramId);
-    if (state) state.setNormalisedValue(safe / 100);
-  };
-
-  const resetToDefault = () => {
-    setFromUi(initialPercent);
-  };
-
-  const dragStart = () => {
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getSliderState(paramId);
-    if (state) state.sliderDragStarted();
-  };
-
-  const dragEnd = () => {
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getSliderState(paramId);
-    if (state) state.sliderDragEnded();
-  };
-
-  return { percent, setFromUi, resetToDefault, dragStart, dragEnd };
-}
-
-function useBypassState() {
-  const [checked, setChecked] = useState(false);
-
-  useEffect(() => {
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getToggleState('bypass');
-    if (!state) return;
-    setChecked(Boolean(state.getValue()));
-    const listener = () => setChecked(Boolean(state.getValue()));
-    const listenerId = state.valueChangedEvent.addListener(listener);
-    return () => state.valueChangedEvent.removeListener(listenerId);
-  }, []);
-
-  const setFromUi = (next) => {
-    const safe = Boolean(next);
-    setChecked(safe);
-    if (typeof Juce === 'undefined') return;
-    const state = Juce.getToggleState('bypass');
-    if (state) state.setValue(safe);
-  };
-
-  return { checked, setFromUi };
-}
-
-function Knob({
-  label,
-  percent,
-  onChange,
-  onReset,
-  onDragStart,
-  onDragEnd,
-  color,
-  dark,
-  size = 90,
-  bipolar = false,
-  centerPercent = 50,
-  compactLabel = false,
-  disabled = false,
-}) {
-  const center = size / 2;
-  const radius = size / 2 - 4;
-  const rotation = percent * 2.7 - 135;
-  const bgPath = describeArc(center, center, radius, -135, 135);
-  const centerAngle = centerPercent * 2.7 - 135;
-  const isCentered = Math.abs(percent - centerPercent) < 0.5;
-  const activeStart = bipolar ? Math.min(centerAngle, rotation) : -135;
-  const activeEnd = bipolar ? Math.max(centerAngle, rotation) : rotation;
-  const activePath = describeArc(center, center, radius, activeStart, activeEnd);
-  const activeStroke = bipolar ? (isCentered ? '#d1d5db' : color) : color;
-  const capSize = size * 0.7;
-  const pointerWidth = Math.max(1.5, size * 0.03);
-  const pointerHeight = Math.max(12, size * 0.26);
-  const pointerMarginTop = Math.max(4, size * 0.08);
-
-  const startYRef = useRef(0);
-  const startPercentRef = useRef(percent);
-
-  const beginDrag = (clientY) => {
-    startYRef.current = clientY;
-    startPercentRef.current = percent;
-    onDragStart();
-  };
-
-  const handleMove = (clientY) => {
-    const deltaY = startYRef.current - clientY;
-    const sensitivity = 0.35;
-    onChange(startPercentRef.current + deltaY * sensitivity);
-  };
-
-  const onMouseDown = (e) => {
-    if (disabled) return;
-    e.preventDefault();
-    beginDrag(e.clientY);
-
-    const move = (ev) => handleMove(ev.clientY);
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDragEnd();
-    };
-
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
-  return (
-    <div className="knob-wrap" style={{ width: size + 8 }}>
-      <div
-        className="knob"
-        style={{ width: size, height: size }}
-        onMouseDown={onMouseDown}
-        onDoubleClick={disabled ? undefined : onReset}
-      >
-        <svg width={size} height={size} className="knob-svg">
-          <path d={bgPath} fill="none" stroke="#d1d5db" strokeWidth="3" strokeLinecap="round" />
-          {!bipolar || !isCentered ? (
-            <path d={activePath} fill="none" stroke={activeStroke} strokeWidth="3" strokeLinecap="round" />
-          ) : null}
-        </svg>
-        <div
-          className={`knob-cap ${dark ? 'knob-cap-dark' : 'knob-cap-light'}`}
-          style={{
-            width: capSize,
-            height: capSize,
-            transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-          }}
-        >
-          <div
-            className={`knob-pointer ${dark ? 'knob-pointer-dark' : 'knob-pointer-light'}`}
-            style={{
-              width: pointerWidth,
-              height: pointerHeight,
-              marginTop: pointerMarginTop,
-            }}
-          />
-        </div>
-      </div>
-      {label ? <span className={`knob-label ${compactLabel ? 'knob-label-compact' : ''}`}>{label}</span> : null}
-    </div>
-  );
-}
-
-function HeaderGainKnob({ percent, onChange, onReset, onDragStart, onDragEnd, disabled }) {
-  const size = 30;
-  const center = size / 2;
-  const rotation = percent * 2.7 - 135;
-  const startYRef = useRef(0);
-  const startPercentRef = useRef(percent);
-
-  const beginDrag = (clientY) => {
-    startYRef.current = clientY;
-    startPercentRef.current = percent;
-    onDragStart();
-  };
-
-  const handleMove = (clientY) => {
-    const deltaY = startYRef.current - clientY;
-    onChange(startPercentRef.current + deltaY * 0.35);
-  };
-
-  const onMouseDown = (e) => {
-    if (disabled) return;
-    e.preventDefault();
-    beginDrag(e.clientY);
-
-    const move = (ev) => handleMove(ev.clientY);
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDragEnd();
-    };
-
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
-  return (
-    <button
-      type="button"
-      className="header-gain-knob"
-      onMouseDown={onMouseDown}
-      onDoubleClick={disabled ? undefined : onReset}
-      aria-label="Output gain"
-      title="Output gain (double-click to reset)"
-    >
-      <svg width={size} height={size}>
-        <circle cx={center} cy={center} r={13.5} fill="#efefef" />
-        <g transform={`rotate(${rotation} ${center} ${center})`}>
-          <line x1={center} y1={center} x2={center} y2={5} stroke="#8b8b8b" strokeWidth="2" strokeLinecap="round" />
-        </g>
-      </svg>
-    </button>
-  );
-}
-
-function SpectrumPanel({ bins }) {
-  const width = 248;
-  const height = 110;
-  const usableHeight = 78;
-  const floorY = 30 + usableHeight;
-  const pointStep = width / (bins.length - 1);
-
-  const linePoints = bins
-    .map((value, index) => {
-      const x = index * pointStep;
-      const y = floorY - clamp(value, 0, 1) * usableHeight;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  const fillPoints = `${linePoints} ${width},${height} 0,${height}`;
-
-  return (
-    <div className="eq-panel">
-      <div className="eq-controls">
-        <div className="eq-circle" />
-        <div className="eq-chip">Effect</div>
-      </div>
-      <svg width="100%" height="100%" viewBox="0 0 248 110" preserveAspectRatio="none">
-        <line x1="62" y1="0" x2="62" y2="110" stroke="#c8c8d0" strokeWidth="1" />
-        <line x1="124" y1="0" x2="124" y2="110" stroke="#c8c8d0" strokeWidth="1" />
-        <line x1="186" y1="0" x2="186" y2="110" stroke="#c8c8d0" strokeWidth="1" />
-        <polygon points={fillPoints} fill="rgba(160,152,185,0.35)" />
-        <polyline points={linePoints} fill="none" stroke="#a098b9" strokeWidth="1.5" />
-      </svg>
-    </div>
-  );
-}
+const percentLabel = (value) => `${Math.round(value * 100)}%`;
 
 export default function App() {
   const rootRef = useRef(null);
+  const [uiScale, setUiScale] = useState(1);
+  const [meters, setMeters] = useState({ left: 0, right: 0 });
+  const [spectrumBins, setSpectrumBins] = useState(() => new Array(72).fill(0));
+
+  const drive = useJuceSlider('drive', 0.35);
+  const tone = useJuceSlider('tone', 0.5);
+  const mix = useJuceSlider('mix', 1);
+  const bypass = useJuceToggle('bypass', false);
+
   const hasJuce =
     typeof Juce !== 'undefined' &&
     typeof window.__JUCE__ !== 'undefined' &&
     window.__JUCE__.initialisationData?.__juce__sliders?.length > 0;
 
-  const gain = useSliderState('gain', 0);
-  const tone = useSliderState('tone', 50);
-  const mix = useSliderState('mix', 100);
-  const outputGain = useSliderState('outputGain', 50);
-  const bypass = useBypassState();
-  const [noise, setNoise] = useState(35);
-  const [smooth, setSmooth] = useState(35);
-  const [isMain, setIsMain] = useState(true);
-  const [meters, setMeters] = useState({ left: 0, right: 0 });
-  const [spectrumBins, setSpectrumBins] = useState(() => new Array(72).fill(0));
-  const [uiScale, setUiScale] = useState(1);
+  const pluginName = window.__JUCE__?.initialisationData?.pluginName ?? 'WebView Plugin Starter';
+  const pluginVersion = window.__JUCE__?.initialisationData?.pluginVersion ?? '0.1.0';
+  const companyName = window.__JUCE__?.initialisationData?.companyName ?? 'Your Company';
 
   useEffect(() => {
-    const updateScaleFromRect = (rect) => {
-      const availableWidth = Math.max(1, rect.width);
-      const availableHeight = Math.max(1, rect.height);
-      const scale = Math.min(availableWidth / BASE_WIDTH, availableHeight / BASE_HEIGHT);
-      setUiScale(scale);
+    const node = rootRef.current;
+    if (!node) return undefined;
+
+    const updateScale = (rect) => {
+      const scale = Math.min(rect.width / BASE_WIDTH, rect.height / BASE_HEIGHT);
+      setUiScale(Math.max(0.6, scale));
     };
 
-    const node = rootRef.current;
-    if (!node) return;
-
     const observer = new ResizeObserver((entries) => {
-      if (entries[0]) updateScaleFromRect(entries[0].contentRect);
+      if (entries[0]) updateScale(entries[0].contentRect);
     });
-    observer.observe(node);
-    updateScaleFromRect(node.getBoundingClientRect());
 
+    observer.observe(node);
+    updateScale(node.getBoundingClientRect());
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.__JUCE__ === 'undefined' || !window.__JUCE__.backend)
-      return;
+    if (typeof window === 'undefined' || !window.__JUCE__?.backend) return undefined;
 
     const meterToken = window.__JUCE__.backend.addEventListener('meterData', (event) => {
       setMeters({
@@ -334,7 +62,7 @@ export default function App() {
 
     const spectrumToken = window.__JUCE__.backend.addEventListener('spectrumData', (event) => {
       if (!Array.isArray(event)) return;
-      setSpectrumBins(event.map((v) => clamp(Number(v ?? 0), 0, 1)));
+      setSpectrumBins(event.map((value) => clamp(Number(value ?? 0), 0, 1)));
     });
 
     return () => {
@@ -343,12 +71,9 @@ export default function App() {
     };
   }, []);
 
-  const resetToDefaults = () => {
-    gain.setFromUi(0);
-    tone.setFromUi(50);
-    mix.setFromUi(100);
-    outputGain.setFromUi(50);
-  };
+  useEffect(() => {
+    document.title = pluginName;
+  }, [pluginName]);
 
   const stageStyle = useMemo(
     () => ({
@@ -359,204 +84,100 @@ export default function App() {
     [uiScale]
   );
 
+  const resetParameters = () => {
+    drive.reset();
+    tone.reset();
+    mix.reset();
+    bypass.setChecked(false);
+  };
+
   return (
-    <div className="format-root" ref={rootRef}>
-      <div className="format-stage" style={stageStyle}>
-      <div className={`format-unit ${bypass.checked ? 'is-disabled' : ''}`}>
-        <div className="format-header">
-          <button
-            type="button"
-            className={`power-dot-button ${bypass.checked ? 'is-off' : ''}`}
-            onClick={() => bypass.setFromUi(!bypass.checked)}
-            aria-label="Bypass"
-            title="Bypass"
-          >
-            <span className="power-dot" />
-          </button>
-          <div className="format-title">FORMAT</div>
-          <div className="header-icons">
-            <HeaderGainKnob
-              percent={outputGain.percent}
-              onChange={outputGain.setFromUi}
-              onReset={outputGain.resetToDefault}
-              onDragStart={outputGain.dragStart}
-              onDragEnd={outputGain.dragEnd}
-              disabled={bypass.checked}
-            />
-            <div className="meter-pair" aria-label="Input level meters">
-              <div className="meter-rail">
-                <div className="meter-fill" style={{ transform: `scaleY(${meters.left})` }} />
-              </div>
-              <div className="meter-rail">
-                <div className="meter-fill" style={{ transform: `scaleY(${meters.right})` }} />
-              </div>
-            </div>
+    <div className="app-shell" ref={rootRef}>
+      <div className={`plugin-stage ${bypass.checked ? 'is-bypassed' : ''}`} style={stageStyle}>
+        <header className="hero-card">
+          <div>
+            <span className="eyebrow">JUCE 8 + WebView template</span>
+            <h1>{pluginName}</h1>
+            <p>
+              Reuse this shell, swap the parameters in `ParameterIDs.h`, and replace the UI when your
+              product needs something custom.
+            </p>
           </div>
-        </div>
+          <div className="hero-meta">
+            <div className="hero-chip">{companyName}</div>
+            <div className="hero-chip">v{pluginVersion}</div>
+          </div>
+        </header>
 
-        <div className="preset-block">
-          <button type="button" className="arrow-btn" aria-label="Previous">‹</button>
-          <span className="preset-name">Degrade</span>
-          <button type="button" className="arrow-btn" aria-label="Next">›</button>
-        </div>
-        <div className="dots">
-          <span className="dot dot-active" />
-          <span className="dot" />
-          <span className="dot" />
-          <span className="dot" />
-        </div>
+        <section className="status-row">
+          <button type="button" className={`bypass-toggle ${bypass.checked ? 'is-on' : ''}`} onClick={bypass.toggle}>
+            <span className="bypass-toggle-label">Bypass</span>
+            <span className="bypass-toggle-knob" />
+          </button>
+          <div className="status-copy">
+            <span className="status-title">Realtime bridge example</span>
+            <span className="status-text">Meters and analyzer data are emitted from native code.</span>
+          </div>
+          <MeterPair left={meters.left} right={meters.right} />
+        </section>
 
-        {isMain ? (
-          <>
-            <div className="visualizer">
-              <svg width="120" height="60" viewBox="0 0 120 60">
-                <path d="M10 30 Q 20 5 30 30 T 50 30" fill="none" stroke="#a59eb5" strokeWidth="4" strokeLinecap="round" />
-                <rect x="60" y="20" width="8" height="20" fill="#a59eb5" opacity="0.8" />
-                <rect x="72" y="10" width="8" height="40" fill="#a59eb5" opacity="0.6" />
-                <rect x="84" y="25" width="8" height="10" fill="#a59eb5" opacity="0.4" />
-                <rect x="96" y="15" width="8" height="30" fill="#a59eb5" opacity="0.8" />
-              </svg>
-            </div>
-
-            <div className="knob-column">
-              <Knob
-                label="Crush"
-                percent={gain.percent}
-                onChange={gain.setFromUi}
-                onReset={gain.resetToDefault}
-                onDragStart={gain.dragStart}
-                onDragEnd={gain.dragEnd}
-                color="#a59eb5"
-                size={90}
-                disabled={bypass.checked}
-              />
-              <Knob
-                label="Tone"
-                percent={tone.percent}
-                onChange={tone.setFromUi}
-                onReset={tone.resetToDefault}
-                onDragStart={tone.dragStart}
-                onDragEnd={tone.dragEnd}
-                color="#a59eb5"
-                bipolar
-                centerPercent={50}
-                size={90}
-                disabled={bypass.checked}
-              />
-              <Knob
-                label="Mix"
-                percent={mix.percent}
-                onChange={mix.setFromUi}
-                onReset={mix.resetToDefault}
-                onDragStart={mix.dragStart}
-                onDragEnd={mix.dragEnd}
-                color="#5b5b5b"
-                dark
-                size={90}
-                disabled={bypass.checked}
-              />
-            </div>
-            <div className="main-bottom-spacer" />
-          </>
-        ) : (
-          <>
-            <div className="adv-curve-wrap">
-              <SpectrumPanel bins={spectrumBins} />
-            </div>
-            <div className="adv-knob-column">
-              <Knob
-                label="Noise"
-                percent={noise}
-                onChange={(v) => setNoise(clamp(Math.round(v), 0, 100))}
-                onReset={() => setNoise(35)}
-                onDragStart={() => {}}
-                onDragEnd={() => {}}
-                color="#b0aabf"
-                size={85}
-                disabled={bypass.checked}
-              />
-              <Knob
-                label="Smooth"
-                percent={smooth}
-                onChange={(v) => setSmooth(clamp(Math.round(v), 0, 100))}
-                onReset={() => setSmooth(35)}
-                onDragStart={() => {}}
-                onDragEnd={() => {}}
-                color="#b0aabf"
-                size={85}
-                disabled={bypass.checked}
-              />
-            </div>
-            <div className="adv-mini-row">
-              <Knob
-                label="Crush"
-                percent={gain.percent}
-                onChange={gain.setFromUi}
-                onReset={gain.resetToDefault}
-                onDragStart={gain.dragStart}
-                onDragEnd={gain.dragEnd}
-                color="#a59eb5"
-                size={56}
-                compactLabel
-                disabled={bypass.checked}
-              />
-              <Knob
-                label="Tone"
-                percent={tone.percent}
-                onChange={tone.setFromUi}
-                onReset={tone.resetToDefault}
-                onDragStart={tone.dragStart}
-                onDragEnd={tone.dragEnd}
-                color="#a59eb5"
-                bipolar
-                centerPercent={50}
-                size={56}
-                compactLabel
-                disabled={bypass.checked}
-              />
-              <Knob
-                label="Mix"
-                percent={mix.percent}
-                onChange={mix.setFromUi}
-                onReset={mix.resetToDefault}
-                onDragStart={mix.dragStart}
-                onDragEnd={mix.dragEnd}
-                color="#5b5b5b"
-                dark
-                size={56}
-                compactLabel
-                disabled={bypass.checked}
-              />
-            </div>
-          </>
-        )}
-
-        {!hasJuce && <p className="fallback">JUCE backend not present. Run inside plugin for full control sync.</p>}
-
-        <div className="format-footer">
-          <div className="main-adv">
-            <span className={isMain ? 'footer-on' : 'footer-off'}>Main</span>
-            <button
-              type="button"
-              className="main-toggle"
-              onClick={() => setIsMain((v) => !v)}
-              aria-label="Main or advanced mode"
-            >
-              <span className={`main-toggle-dot ${isMain ? 'toggle-left' : 'toggle-right'}`} />
+        <section className="controls-card">
+          <div className="section-heading">
+            <span>Starter parameters</span>
+            <button type="button" className="reset-button" onClick={resetParameters}>
+              Reset
             </button>
-            <span className={!isMain ? 'footer-on' : 'footer-off'}>Adv.</span>
           </div>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Reset (double-click)"
-            onDoubleClick={resetToDefaults}
-            title="Double-click to reset defaults"
-          >
-            ↻
-          </button>
-        </div>
-      </div>
+          <div className="controls-grid">
+            <ParameterKnob
+              label="Drive"
+              value={drive.value}
+              valueText={percentLabel(drive.value)}
+              accent="#67e8f9"
+              disabled={bypass.checked}
+              onChange={drive.setValue}
+              onReset={drive.reset}
+              onGestureStart={drive.beginGesture}
+              onGestureEnd={drive.endGesture}
+            />
+            <ParameterKnob
+              label="Tone"
+              value={tone.value}
+              valueText={percentLabel(tone.value)}
+              accent="#a78bfa"
+              disabled={bypass.checked}
+              onChange={tone.setValue}
+              onReset={tone.reset}
+              onGestureStart={tone.beginGesture}
+              onGestureEnd={tone.endGesture}
+            />
+            <ParameterKnob
+              label="Mix"
+              value={mix.value}
+              valueText={percentLabel(mix.value)}
+              accent="#f59e0b"
+              disabled={bypass.checked}
+              onChange={mix.setValue}
+              onReset={mix.reset}
+              onGestureStart={mix.beginGesture}
+              onGestureEnd={mix.endGesture}
+            />
+          </div>
+        </section>
+
+        <section className="example-card">
+          <div className="section-heading">
+            <span>Optional example section</span>
+            <span className="section-note">Delete this when you wire in your own UI.</span>
+          </div>
+          <SpectrumPanel bins={spectrumBins} />
+        </section>
+
+        {!hasJuce ? (
+          <p className="fallback-banner">
+            JUCE host bridge not detected. Run the Vite app inside the plugin to test parameter sync.
+          </p>
+        ) : null}
       </div>
     </div>
   );

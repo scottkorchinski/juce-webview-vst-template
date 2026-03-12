@@ -2,16 +2,17 @@
 
 #include "PluginProcessor.h"
 #include "ParameterIDs.h"
+#include "TemplatePluginConfig.h"
 #include <array>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
-namespace excite {
+namespace template_plugin {
 
-class LifelineEditor : public juce::AudioProcessorEditor, private juce::Timer {
+class TemplatePluginEditor : public juce::AudioProcessorEditor, private juce::Timer {
 public:
-  explicit LifelineEditor(LifelineProcessor&);
-  ~LifelineEditor() override;
+  explicit TemplatePluginEditor(TemplatePluginProcessor&);
+  ~TemplatePluginEditor() override;
 
   void resized() override;
 
@@ -27,20 +28,18 @@ private:
   void emitSpectrumEvent();
   void emitMeterEvent();
 
-  LifelineProcessor& processorRef;
+  TemplatePluginProcessor& processorRef;
 
-  juce::WebSliderRelay webGainRelay;
+  juce::WebSliderRelay webDriveRelay;
   juce::WebSliderRelay webToneRelay;
   juce::WebSliderRelay webMixRelay;
-  juce::WebSliderRelay webOutputGainRelay;
   juce::WebToggleButtonRelay webBypassRelay;
 
   juce::WebBrowserComponent webView;
 
-  juce::WebSliderParameterAttachment webGainAttachment;
+  juce::WebSliderParameterAttachment webDriveAttachment;
   juce::WebSliderParameterAttachment webToneAttachment;
   juce::WebSliderParameterAttachment webMixAttachment;
-  juce::WebSliderParameterAttachment webOutputGainAttachment;
   juce::WebToggleButtonParameterAttachment webBypassAttachment;
 
   juce::dsp::FFT forwardFFT{fftOrder};
@@ -51,7 +50,7 @@ private:
   int fifoIndex{0};
   bool nextFftBlockReady{false};
 
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LifelineEditor)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TemplatePluginEditor)
 };
 
-} // namespace excite
+} // namespace template_plugin

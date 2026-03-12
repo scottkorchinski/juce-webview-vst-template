@@ -15,7 +15,7 @@ fi
 
 echo "Building web UI..."
 cd "$WEB_DIR"
-npm ci --omit=optional 2>/dev/null || npm install
+npm ci 2>/dev/null || npm install
 npm run build
 
 echo "Copying dist to WebViewAssets..."
